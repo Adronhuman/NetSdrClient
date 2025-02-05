@@ -266,12 +266,12 @@ namespace NetSdrClient
                 DataMessageArrived.Invoke(this, msg);
             };
 
-            _ = ReceiveMessagesAsync(_udpSocket, _messageManager);
+            _ = Task.Run(() => ReceiveMessagesAsync(_udpSocket, _messageManager));
         }
 
         private async Task ReceiveMessagesAsync(ISocket udpSocket, DataMessageManager messageManager)
         {
-            while (true)
+            while (!_cts.IsCancellationRequested)
             {
                 // 0x04 | 0x84 | 16bit Sequence Number | 1024/512 Data Bytes - 512/256 16bit data samples
                 // 1028 / 514 bytes total
