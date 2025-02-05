@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "InfoZahystTest": {
+      "commandName": "Project"
+    },
+    "Container (Dockerfile)": {
+      "commandName": "Docker"
+    }
+  }
+}
