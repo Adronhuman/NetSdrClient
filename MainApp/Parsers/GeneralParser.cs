@@ -11,8 +11,8 @@ namespace NetSdrClient.Parsers
             var first5bitmask = (1 << 5) - 1;
             var last3bitmask = 0b111 << 5;
 
-            var length = firstByte & (secondByte & first5bitmask) << 8;
-            var msgType = secondByte & last3bitmask;
+            var length = firstByte | (secondByte & first5bitmask) << 8;
+            var msgType = (secondByte & last3bitmask) >> 5;
 
             header.MessageLength = (short)length;
             header.MessageType = EnumExtensions.GetMessageType((byte)msgType);

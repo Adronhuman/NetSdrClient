@@ -9,7 +9,6 @@
     public class Data0ItemParameter
     {
         public short SequenceNumber { get; set; }
-        public ushort NumberOfBytes { get; set; }
         public byte[] Bytes { get; set; }
     }
 }

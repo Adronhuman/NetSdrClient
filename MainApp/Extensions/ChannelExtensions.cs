@@ -1,4 +1,5 @@
-﻿using System.Threading.Channels;
+﻿using System.Linq.Expressions;
+using System.Threading.Channels;
 
 namespace NetSdrClient.Extensions
 {
@@ -7,12 +8,18 @@ namespace NetSdrClient.Extensions
         public static async Task<T> ReadWithTimeoutAsync<T>(this ChannelReader<T> reader, TimeSpan timeout)
         {
             using var cts = new CancellationTokenSource(timeout);
-
-            var readTask = reader.ReadAsync(cts.Token).AsTask();
-
-            if (await Task.WhenAny(readTask, Task.Delay(timeout, cts.Token)) == readTask)
+            try
             {
-                return await readTask;
+                var readTask = reader.ReadAsync(cts.Token).AsTask();
+
+                if (await Task.WhenAny(readTask, Task.Delay(timeout)) == readTask)
+                {
+                    return await readTask;
+                }
+            }
+            catch (OperationCanceledException ex)
+            {
+                throw new TimeoutException("Read operation timed out.");
             }
 
             throw new TimeoutException("Read operation timed out.");

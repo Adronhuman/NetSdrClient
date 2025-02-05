@@ -15,33 +15,15 @@ namespace NetSdrClient.Parsers
             var secondHeaderByte = binaryReader.ReadByte();
             result.Header = GeneralParser.ParseHeader(firstHeaderByte, secondHeaderByte);
 
-            var firstByte = binaryReader.ReadByte();
-            if (firstByte != 0x04)
-            {
-                ThrowInvalidFormat();
-            }
-
-            var secondByte = binaryReader.ReadByte();
-            // Real 16 Bit FIFO Data assumed for now
-            if (secondByte == 0x84)
-            {
-                result.Data.NumberOfBytes = 1024;
-            }
-            else if (secondByte == 0x82)
-            {
-                result.Data.NumberOfBytes = 512;
-            }
-            else
+            var firstBodyByte = binaryReader.ReadByte();
+            var secondBodyByte = binaryReader.ReadByte();
+            if (firstBodyByte != 0x04)
             {
                 ThrowInvalidFormat();
             }
 
             result.Data.SequenceNumber = binaryReader.ReadInt16();
-            result.Data.Bytes = binaryReader.ReadBytes(int.MaxValue);
-            if (result.Data.Bytes.Length != result.Data.NumberOfBytes)
-            {
-                ThrowInvalidFormat();
-            }
+            result.Data.Bytes = binaryReader.ReadBytes(result.Header.MessageLength - 6);
 
             return result;
         }

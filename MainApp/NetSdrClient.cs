@@ -1,9 +1,12 @@
 ﻿using NetSdrClient.CommandBuilder;
 using NetSdrClient.Extensions;
+using NetSdrClient.Interfaces;
 using NetSdrClient.MessageManagers;
 using NetSdrClient.Models;
 using NetSdrClient.Models.Enums;
 using NetSdrClient.Parsers;
+using NetSdrClient.SocketFactory;
+using NetSdrClient.Sockets;
 using System.Buffers;
 using System.IO.Pipelines;
 using System.Net;
@@ -12,19 +15,39 @@ using System.Threading.Channels;
 
 namespace NetSdrClient
 {
-    public class NetSdrClient(IPAddress receiver)
+    public class NetSdrClient
     {
-        private static int TCP_PORT = 50000;
-        private static int UDP_PORT = 60000;
-        private readonly IPEndPoint _receiverEndpoint = new IPEndPoint(receiver, TCP_PORT);
-        private Socket? _tcpSocket;
+        public readonly static int TCP_PORT = 50000;
+        public readonly static int UDP_PORT = 60000;
+        private TimeSpan _timeout;
+        private bool _shouldBufferBeforeNofity;
+        private ISocketFactory _socketFactory;
+        private readonly IPEndPoint _receiverEndpoint;
+        private ISocket? _tcpSocket;
         private CancellationTokenSource _cts = new();
         private readonly Channel<ControlItemMessage> _responseChannel = Channel.CreateUnbounded<ControlItemMessage>();
         private readonly Channel<ControlItemMessage> _unsolicitedChannel = Channel.CreateUnbounded<ControlItemMessage>();
-        private Socket? _udpSocket;
+        private ISocket? _udpSocket;
         private DataMessageManager? _messageManager;
 
         public event EventHandler<DataItemMessage> DataMessageArrived = delegate { };
+
+        public NetSdrClient(IPAddress receiver)
+        {
+            _receiverEndpoint = new IPEndPoint(receiver, TCP_PORT);
+            _socketFactory = new DefaultSocketFactory();
+        }
+
+        public NetSdrClient(ISocketFactory socketFactory, 
+            IPAddress receiver, 
+            TimeSpan timeout = default,
+            bool bufferBeforeNotify = false)
+        {
+            _receiverEndpoint = new IPEndPoint(receiver, TCP_PORT);
+            _socketFactory = socketFactory;
+            _timeout = (timeout == default(TimeSpan)) ? TimeSpan.FromSeconds(5) : timeout;
+            _shouldBufferBeforeNofity = bufferBeforeNotify;
+        }
 
         #region Interface methods
         public void Connect()
@@ -37,13 +60,15 @@ namespace NetSdrClient
             SetupControlSocket(out _tcpSocket);
 
             _cts = new();
-            _ = ConfigureControlPipe(_tcpSocket).ContinueWith(task =>
-            {
-                if (task.IsFaulted)
+            _ = Task.Run(() => 
+                ConfigureControlPipe(_tcpSocket).ContinueWith(task =>
                 {
-                    Console.WriteLine($"Pipe processing failed: {task.Exception}");
-                }
-            }, TaskContinuationOptions.OnlyOnFaulted);
+                    if (task.IsFaulted)
+                    {
+                        Console.WriteLine($"Pipe processing failed: {task.Exception}");
+                    }
+                }, TaskContinuationOptions.OnlyOnFaulted)
+            );
         }
 
         public void Disconnect()
@@ -63,22 +88,24 @@ namespace NetSdrClient
         }
 
         /// <summary>
-        /// Sets the receiver state to either start or stop.
+        /// Sets the receiver state to either start or stop. Only 16 bit FIFO mode for now
         /// </summary>
         /// <param name="start">Pass <c>true</c> to start the receiver, <c>false</c> to stop it.</param>
         /// <param name="isComplexData">Complex or real baseband</param>
         /// <param name="captureMode">Capture mode as in specification (4.2.1) </param>
+        /// <param name="fifoSize">Specifies the number of 4096 16 bit data samples in the FIFO mode</param>
         /// <returns><c>true</c> if the operation succeeded.</returns>
         /// <exception cref="InvalidOperationException">Thrown when the receiver returns NAK</exception>
         /// <exception cref="TimeoutException">Thrown when the receiver does not respond</exception>
-        public async Task<bool> SetReceiverState(bool start, bool isComplexData, CaptureMode captureMode)
+        public async Task<bool> SetReceiverState(bool start, byte fifoSize)
         {
             ThrowIfNotConnected();
 
-            var commandBytes = NetSDRCommandBuilder.SetReceiverStateMessage(isComplexData, start, captureMode);
-            _tcpSocket!.Send(commandBytes);
+            // capture mode and complex/real config could be extended later
+            var commandBytes = NetSDRCommandBuilder.SetReceiverStateMessage(false, start, CaptureMode.Fifo16Bit, fifoSize);
+            await _tcpSocket!.SendAsync(commandBytes);
 
-            ControlItemMessage message = await _responseChannel.Reader.ReadWithTimeoutAsync(TimeSpan.FromSeconds(5));
+            ControlItemMessage message = await _responseChannel.Reader.ReadWithTimeoutAsync(_timeout);
             if (message.Header.MessageLength == 2)
             {
                 throw new InvalidOperationException("Failed to set receiver state: Device returned NAK.");
@@ -105,9 +132,9 @@ namespace NetSdrClient
             ThrowIfNotConnected();
 
             var commandBytes = NetSDRCommandBuilder.SetReceiverFrequencyMessage(channel, frequency);
-            _tcpSocket!.Send(commandBytes);
+            await _tcpSocket!.SendAsync(commandBytes);
 
-            ControlItemMessage message = await _responseChannel.Reader.ReadWithTimeoutAsync(TimeSpan.FromSeconds(5));
+            ControlItemMessage message = await _responseChannel.Reader.ReadWithTimeoutAsync(_timeout);
             if (message.Header.MessageLength == 2)
             {
                 throw new InvalidOperationException("Failed to set receiver state: Device returned NAK.");
@@ -118,7 +145,7 @@ namespace NetSdrClient
         #endregion
 
         #region Control Item Pipe
-        private async Task ConfigureControlPipe(Socket socket)
+        private async Task ConfigureControlPipe(ISocket socket)
         {
             var pipe = new Pipe();
             Task writing = FillControlPipeAsync(socket, pipe.Writer);
@@ -126,7 +153,7 @@ namespace NetSdrClient
             await Task.WhenAll(writing, reading);
         }
 
-        private async Task FillControlPipeAsync(Socket socket, PipeWriter writer)
+        private async Task FillControlPipeAsync(ISocket socket, PipeWriter writer)
         {
             const int minimumBufferSize = 512;
 
@@ -235,7 +262,7 @@ namespace NetSdrClient
         private async Task StartReceivingDataAsync()
         {
             SetupDataSocket(out _udpSocket);
-            _messageManager = new DataMessageManager();
+            _messageManager = new DataMessageManager(_shouldBufferBeforeNofity ? 5 : 0);
             _messageManager.DataMessageReceived += (sender, msg) =>
             {
                 DataMessageArrived.Invoke(this, msg);
@@ -244,7 +271,7 @@ namespace NetSdrClient
             _ = ReceiveMessagesAsync(_udpSocket, _messageManager);
         }
 
-        private async Task ReceiveMessagesAsync(Socket udpSocket, DataMessageManager messageManager)
+        private async Task ReceiveMessagesAsync(ISocket udpSocket, DataMessageManager messageManager)
         {
             while (true)
             {
@@ -253,10 +280,11 @@ namespace NetSdrClient
                 var buffer = ArrayPool<byte>.Shared.Rent(1028);
                 try
                 {
-                    udpSocket.Receive(buffer);
+                    await udpSocket.ReceiveAsync(buffer);
                     var dataMessage = DataItemMessageParser.Parse(buffer);
                     messageManager.Feed(dataMessage);
                 }
+                catch (Exception ex) { }
                 finally
                 {
                     ArrayPool<byte>.Shared.Return(buffer);
@@ -266,16 +294,16 @@ namespace NetSdrClient
 
         #endregion
 
-        private void SetupControlSocket(out Socket tcpSocket)
+        private void SetupControlSocket(out ISocket tcpSocket)
         {
-            tcpSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            tcpSocket = _socketFactory.CreateTCPSocket();
             tcpSocket.Connect(_receiverEndpoint);
         }
 
-        private void SetupDataSocket(out Socket udpSocket)
+        private void SetupDataSocket(out ISocket udpSocket)
         {
-            udpSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-            IPEndPoint localEndPoint = new IPEndPoint(IPAddress.Any, UDP_PORT);
+            udpSocket = _socketFactory.CreateUDPSocket();
+            IPEndPoint localEndPoint = new(IPAddress.Any, UDP_PORT);
             udpSocket.Bind(localEndPoint);
         }
 
@@ -295,12 +323,17 @@ namespace NetSdrClient
                 // Poll() returns true if:
                 // - Data is available
                 // - Connection is closed/reset/terminated
-                return !(_tcpSocket.Poll(1, SelectMode.SelectRead) && _tcpSocket.Available == 0);
+                if (_tcpSocket.Poll(1, SelectMode.SelectRead) && _tcpSocket.Available == 0)
+                {
+                    return false;
+                }
             }
             catch (SocketException)
             {
                 return false;
             }
+
+            return true;
         }
     }
 }

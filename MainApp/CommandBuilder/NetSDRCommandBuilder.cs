@@ -7,7 +7,6 @@ namespace NetSdrClient.CommandBuilder
         /// <summary>
         /// Prepares message for Receiver State Control Item 0x0018
         /// </summary>
-        /// <param name="fifoSize">Specifies the number of 4096 16 bit data samples in the FIFO mode</param>
         public static byte[] SetReceiverStateMessage(bool isComplexData, bool isStart, CaptureMode captureMode, byte fifoSize = 0)
         {
             var itemCode = ControlItemCode.ReceiverState;
