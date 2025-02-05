@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MainApp\NetSdrClient.csproj" />
+    <ProjectReference Include="..\NetSdrClient\NetSdrClient.csproj" />
   </ItemGroup>
 
   <ItemGroup>

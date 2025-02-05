@@ -1,11 +1,9 @@
 ﻿using NetSdrClient.CommandBuilder;
 using NetSdrClient.Extensions;
-using NetSdrClient.Interfaces;
 using NetSdrClient.MessageManagers;
 using NetSdrClient.Models;
 using NetSdrClient.Models.Enums;
 using NetSdrClient.Parsers;
-using NetSdrClient.SocketFactory;
 using NetSdrClient.Sockets;
 using System.Buffers;
 using System.IO.Pipelines;
@@ -38,8 +36,8 @@ namespace NetSdrClient
             _socketFactory = new DefaultSocketFactory();
         }
 
-        public NetSdrClient(ISocketFactory socketFactory, 
-            IPAddress receiver, 
+        public NetSdrClient(ISocketFactory socketFactory,
+            IPAddress receiver,
             TimeSpan timeout = default,
             bool bufferBeforeNotify = false)
         {
@@ -60,7 +58,7 @@ namespace NetSdrClient
             SetupControlSocket(out _tcpSocket);
 
             _cts = new();
-            _ = Task.Run(() => 
+            _ = Task.Run(() =>
                 ConfigureControlPipe(_tcpSocket).ContinueWith(task =>
                 {
                     if (task.IsFaulted)

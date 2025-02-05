@@ -1,15 +1,10 @@
 ﻿using NetSdrClient.Models.Enums;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Tests.Generators
 {
     public class IQPacketGenerator
     {
-        public static byte[] CreatePacket(int size, byte sequenceNumber) 
+        public static byte[] CreatePacket(int size, byte sequenceNumber)
         {
             var header = CreateHeader(size, MessageType.DataItem0);
             var packet = RandomExtensions.GenerateNRandomBytes(size);
@@ -17,7 +12,7 @@ namespace Tests.Generators
             packet[1] = header[1];
             packet[2] = 0x04;
             packet[3] = 0x82;
-            packet[4] = (byte) sequenceNumber;
+            packet[4] = (byte)sequenceNumber;
             packet[5] = 0;
 
             return packet;
@@ -29,7 +24,7 @@ namespace Tests.Generators
             var header = new byte[2];
             header[0] = (byte)length;
             header[1] = (byte)((length >> 8) & ((1 << 13) - 1));
-            header[1] |= (byte)((int) msgType << 5);
+            header[1] |= (byte)((int)msgType << 5);
 
             return header;
         }

@@ -1,6 +1,5 @@
 using Moq;
 using NetSdrClient.CommandBuilder;
-using NetSdrClient.Interfaces;
 using NetSdrClient.Models.Enums;
 using NetSdrClient.Sockets;
 using System.Net;
@@ -39,18 +38,19 @@ namespace Tests
         {
             byte fifoSize = 10;
             var startCommand = NetSDRCommandBuilder.SetReceiverStateMessage(
-                isComplexData: false, 
-                isStart: true, 
-                CaptureMode.Fifo16Bit, 
+                isComplexData: false,
+                isStart: true,
+                CaptureMode.Fifo16Bit,
                 fifoSize
             );
 
             // return message back as a sign of ACK for now
             _mockTcpSocket.Setup(s => s.ReceiveAsync(It.IsAny<Memory<byte>>(), It.IsAny<CancellationToken>()))
               .ReturnsAsync(startCommand.Length)
-              .Callback((Memory<byte> buffer, CancellationToken _) => {
+              .Callback((Memory<byte> buffer, CancellationToken _) =>
+              {
                   startCommand.CopyTo(buffer);
-               });
+              });
 
             // Act
             _client.Connect();
@@ -66,7 +66,8 @@ namespace Tests
 
             _mockTcpSocket.Setup(s => s.ReceiveAsync(It.IsAny<Memory<byte>>(), It.IsAny<CancellationToken>()))
               .ReturnsAsync(nakResponseBytes.Length)
-              .Callback((Memory<byte> buffer, CancellationToken _) => {
+              .Callback((Memory<byte> buffer, CancellationToken _) =>
+              {
                   nakResponseBytes.CopyTo(buffer);
               });
 

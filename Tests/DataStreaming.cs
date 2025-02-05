@@ -1,16 +1,8 @@
 ﻿using Moq;
-using NetSdrClient.Interfaces;
 using NetSdrClient.Models;
 using NetSdrClient.Sockets;
-using System;
-using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
-using System.Diagnostics;
-using System.Linq;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
-using System.Threading.Tasks;
 using Tests.Generators;
 
 namespace Tests
@@ -39,7 +31,8 @@ namespace Tests
             var simpleAnswer = new byte[10];
             _mockTcpSocket.Setup(s => s.ReceiveAsync(It.IsAny<Memory<byte>>(), It.IsAny<CancellationToken>()))
               .ReturnsAsync(simpleAnswer.Length)
-              .Callback((Memory<byte> buffer, CancellationToken _) => {
+              .Callback((Memory<byte> buffer, CancellationToken _) =>
+              {
                   simpleAnswer.CopyTo(buffer);
               });
 
@@ -56,24 +49,25 @@ namespace Tests
             var sequenceNumber = 73;
             var packets = Enumerable
                 .Range(sequenceNumber, 3)
-                .Select((i) => IQPacketGenerator.CreatePacket(2000, (byte) i))
+                .Select((i) => IQPacketGenerator.CreatePacket(2000, (byte)i))
                 .ToList();
 
             var packetsSent = 0;
             _mockUdpSocket.Setup(udps => udps.ReceiveAsync(It.IsAny<ArraySegment<byte>>()))
-                .Callback((ArraySegment<byte> buffer) => { 
+                .Callback((ArraySegment<byte> buffer) =>
+                {
                     if (packetsSent < packets.Count)
                     {
                         var currentPacket = new ArraySegment<byte>(packets[packetsSent]);
                         currentPacket.CopyTo(buffer);
-                    }                
+                    }
                 })
                 .Returns(async () =>
                 {
                     if (packetsSent < packets.Count)
                     {
                         packetsSent++;
-                        return packets[packetsSent-1].Length;
+                        return packets[packetsSent - 1].Length;
                     }
                     await Task.Delay(Timeout.Infinite);
                     return 1;
@@ -87,7 +81,7 @@ namespace Tests
 
 
             await _client.SetReceiverState(true, fifoSize: 10);
-            
+
             await Task.Delay(500);
             Assert.That(receivedPackets, Has.Count.EqualTo(3));
 
